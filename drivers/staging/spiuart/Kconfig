@@ -1,0 +1,5 @@
+config SPIUART
+	tristate "SPI UART driver"
+	---help---
+	SPI2UART128
+
