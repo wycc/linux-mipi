@@ -81,6 +81,18 @@
 	status = "okay";
 };
 
+&uart1 { 
+	pinctrl-0 = <&uart1_pins_a>;
+	pinctrl-names = "default";
+	status = "okay"; 
+};
+/*
+&uart2 { 
+	pinctrl-0 = <&uart2_pins_a>;
+	pinctrl-names = "default";
+	status = "disabled"; 
+};*/
+
 &usb_otg {
 	dr_mode = "otg";
 	status = "okay";
@@ -89,4 +101,17 @@
 &usbphy {
 	usb0_id_det-gpio = <&pio 5 6 GPIO_ACTIVE_HIGH>;
 	status = "okay";
+};
+
+&spi0 {
+       pinctrl-names = "default";
+       pinctrl-0 = <&spi0_pins>;
+       status = "okay";
+
+       spiuart@0x00 {
+		compatible = "spiuart";
+		spi-max-frequency = <100000000>;
+		reg = <0>;
+		R-gpio = <&pio 1 0 GPIO_ACTIVE_HIGH>;
+       };
 };
