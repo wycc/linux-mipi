@@ -30,6 +30,7 @@
  * SOFTWARE.
  */
 #include "qede_ptp.h"
+#define QEDE_PTP_TX_TIMEOUT (2 * HZ)
 
 struct qede_ptp {
 	const struct qed_eth_ptp_ops	*ops;
@@ -38,6 +39,7 @@ struct qede_ptp {
 	struct timecounter		tc;
 	struct ptp_clock		*clock;
 	struct work_struct		work;
+	unsigned long			ptp_tx_start;
 	struct qede_dev			*edev;
 	struct sk_buff			*tx_skb;
 
@@ -160,18 +162,30 @@ static void qede_ptp_task(struct work_struct *work)
 	struct qede_dev *edev;
 	struct qede_ptp *ptp;
 	u64 timestamp, ns;
+	bool timedout;
 	int rc;
 
 	ptp = container_of(work, struct qede_ptp, work);
 	edev = ptp->edev;
+	timedout = time_is_before_jiffies(ptp->ptp_tx_start +
+					  QEDE_PTP_TX_TIMEOUT);
 
 	/* Read Tx timestamp registers */
 	spin_lock_bh(&ptp->lock);
 	rc = ptp->ops->read_tx_ts(edev->cdev, &timestamp);
 	spin_unlock_bh(&ptp->lock);
 	if (rc) {
-		/* Reschedule to keep checking for a valid timestamp value */
-		schedule_work(&ptp->work);
+		if (unlikely(timedout)) {
+			DP_INFO(edev, "Tx timestamp is not recorded\n");
+			dev_kfree_skb_any(ptp->tx_skb);
+			ptp->tx_skb = NULL;
+			clear_bit_unlock(QEDE_FLAGS_PTP_TX_IN_PRORGESS,
+					 &edev->flags);
+			edev->ptp_skip_txts++;
+		} else {
+			/* Reschedule to keep checking for a valid TS value */
+			schedule_work(&ptp->work);
+		}
 		return;
 	}
 
@@ -181,6 +195,7 @@ static void qede_ptp_task(struct work_struct *work)
 	skb_tstamp_tx(ptp->tx_skb, &shhwtstamps);
 	dev_kfree_skb_any(ptp->tx_skb);
 	ptp->tx_skb = NULL;
+	clear_bit_unlock(QEDE_FLAGS_PTP_TX_IN_PRORGESS, &edev->flags);
 
 	DP_VERBOSE(edev, QED_MSG_DEBUG,
 		   "Tx timestamp, timestamp cycles = %llu, ns = %llu\n",
@@ -206,23 +221,10 @@ static u64 qede_ptp_read_cc(const struct cyclecounter *cc)
 	return phc_cycles;
 }
 
-static void qede_ptp_init_cc(struct qede_dev *edev)
-{
-	struct qede_ptp *ptp;
-
-	ptp = edev->ptp;
-	if (!ptp)
-		return;
-
-	memset(&ptp->cc, 0, sizeof(ptp->cc));
-	ptp->cc.read = qede_ptp_read_cc;
-	ptp->cc.mask = CYCLECOUNTER_MASK(64);
-	ptp->cc.shift = 0;
-	ptp->cc.mult = 1;
-}
-
 static int qede_ptp_cfg_filters(struct qede_dev *edev)
 {
+	enum qed_ptp_hwtstamp_tx_type tx_type = QED_PTP_HWTSTAMP_TX_ON;
+	enum qed_ptp_filter_type rx_filter = QED_PTP_FILTER_NONE;
 	struct qede_ptp *ptp = edev->ptp;
 
 	if (!ptp)
@@ -235,8 +237,13 @@ static int qede_ptp_cfg_filters(struct qede_dev *edev)
 
 	switch (ptp->tx_type) {
 	case HWTSTAMP_TX_ON:
-		edev->flags |= QEDE_TX_TIMESTAMPING_EN;
-		ptp->ops->hwtstamp_tx_on(edev->cdev);
+		set_bit(QEDE_FLAGS_TX_TIMESTAMPING_EN, &edev->flags);
+		tx_type = QED_PTP_HWTSTAMP_TX_ON;
+		break;
+
+	case HWTSTAMP_TX_OFF:
+		clear_bit(QEDE_FLAGS_TX_TIMESTAMPING_EN, &edev->flags);
+		tx_type = QED_PTP_HWTSTAMP_TX_OFF;
 		break;
 
 	case HWTSTAMP_TX_ONESTEP_SYNC:
@@ -247,41 +254,57 @@ static int qede_ptp_cfg_filters(struct qede_dev *edev)
 	spin_lock_bh(&ptp->lock);
 	switch (ptp->rx_filter) {
 	case HWTSTAMP_FILTER_NONE:
+		rx_filter = QED_PTP_FILTER_NONE;
 		break;
 	case HWTSTAMP_FILTER_ALL:
 	case HWTSTAMP_FILTER_SOME:
+	case HWTSTAMP_FILTER_NTP_ALL:
 		ptp->rx_filter = HWTSTAMP_FILTER_NONE;
+		rx_filter = QED_PTP_FILTER_ALL;
 		break;
 	case HWTSTAMP_FILTER_PTP_V1_L4_EVENT:
+		ptp->rx_filter = HWTSTAMP_FILTER_PTP_V1_L4_EVENT;
+		rx_filter = QED_PTP_FILTER_V1_L4_EVENT;
+		break;
 	case HWTSTAMP_FILTER_PTP_V1_L4_SYNC:
 	case HWTSTAMP_FILTER_PTP_V1_L4_DELAY_REQ:
 		ptp->rx_filter = HWTSTAMP_FILTER_PTP_V1_L4_EVENT;
 		/* Initialize PTP detection for UDP/IPv4 events */
-		ptp->ops->cfg_rx_filters(edev->cdev, QED_PTP_FILTER_IPV4);
+		rx_filter = QED_PTP_FILTER_V1_L4_GEN;
 		break;
 	case HWTSTAMP_FILTER_PTP_V2_L4_EVENT:
+		ptp->rx_filter = HWTSTAMP_FILTER_PTP_V2_L4_EVENT;
+		rx_filter = QED_PTP_FILTER_V2_L4_EVENT;
+		break;
 	case HWTSTAMP_FILTER_PTP_V2_L4_SYNC:
 	case HWTSTAMP_FILTER_PTP_V2_L4_DELAY_REQ:
 		ptp->rx_filter = HWTSTAMP_FILTER_PTP_V2_L4_EVENT;
 		/* Initialize PTP detection for UDP/IPv4 or UDP/IPv6 events */
-		ptp->ops->cfg_rx_filters(edev->cdev, QED_PTP_FILTER_IPV4_IPV6);
+		rx_filter = QED_PTP_FILTER_V2_L4_GEN;
 		break;
 	case HWTSTAMP_FILTER_PTP_V2_L2_EVENT:
+		ptp->rx_filter = HWTSTAMP_FILTER_PTP_V2_L2_EVENT;
+		rx_filter = QED_PTP_FILTER_V2_L2_EVENT;
+		break;
 	case HWTSTAMP_FILTER_PTP_V2_L2_SYNC:
 	case HWTSTAMP_FILTER_PTP_V2_L2_DELAY_REQ:
 		ptp->rx_filter = HWTSTAMP_FILTER_PTP_V2_L2_EVENT;
 		/* Initialize PTP detection L2 events */
-		ptp->ops->cfg_rx_filters(edev->cdev, QED_PTP_FILTER_L2);
+		rx_filter = QED_PTP_FILTER_V2_L2_GEN;
 		break;
 	case HWTSTAMP_FILTER_PTP_V2_EVENT:
+		ptp->rx_filter = HWTSTAMP_FILTER_PTP_V2_EVENT;
+		rx_filter = QED_PTP_FILTER_V2_EVENT;
+		break;
 	case HWTSTAMP_FILTER_PTP_V2_SYNC:
 	case HWTSTAMP_FILTER_PTP_V2_DELAY_REQ:
 		ptp->rx_filter = HWTSTAMP_FILTER_PTP_V2_EVENT;
 		/* Initialize PTP detection L2, UDP/IPv4 or UDP/IPv6 events */
-		ptp->ops->cfg_rx_filters(edev->cdev,
-					 QED_PTP_FILTER_L2_IPV4_IPV6);
+		rx_filter = QED_PTP_FILTER_V2_GEN;
 		break;
 	}
+
+	ptp->ops->cfg_filters(edev->cdev, rx_filter, tx_type);
 
 	spin_unlock_bh(&ptp->lock);
 
@@ -324,67 +347,18 @@ int qede_ptp_hw_ts(struct qede_dev *edev, struct ifreq *ifr)
 			    sizeof(config)) ? -EFAULT : 0;
 }
 
-/* Called during load, to initialize PTP-related stuff */
-static void qede_ptp_init(struct qede_dev *edev, bool init_tc)
-{
-	struct qede_ptp *ptp;
-	int rc;
-
-	ptp = edev->ptp;
-	if (!ptp)
-		return;
-
-	spin_lock_init(&ptp->lock);
-
-	/* Configure PTP in HW */
-	rc = ptp->ops->enable(edev->cdev);
-	if (rc) {
-		DP_ERR(edev, "Stopping PTP initialization\n");
-		return;
-	}
-
-	/* Init work queue for Tx timestamping */
-	INIT_WORK(&ptp->work, qede_ptp_task);
-
-	/* Init cyclecounter and timecounter. This is done only in the first
-	 * load. If done in every load, PTP application will fail when doing
-	 * unload / load (e.g. MTU change) while it is running.
-	 */
-	if (init_tc) {
-		qede_ptp_init_cc(edev);
-		timecounter_init(&ptp->tc, &ptp->cc,
-				 ktime_to_ns(ktime_get_real()));
-	}
-
-	DP_VERBOSE(edev, QED_MSG_DEBUG, "PTP initialization is successful\n");
-}
-
-void qede_ptp_start(struct qede_dev *edev, bool init_tc)
-{
-	qede_ptp_init(edev, init_tc);
-	qede_ptp_cfg_filters(edev);
-}
-
-void qede_ptp_remove(struct qede_dev *edev)
-{
-	struct qede_ptp *ptp;
-
-	ptp = edev->ptp;
-	if (ptp && ptp->clock) {
-		ptp_clock_unregister(ptp->clock);
-		ptp->clock = NULL;
-	}
-
-	kfree(ptp);
-	edev->ptp = NULL;
-}
-
 int qede_ptp_get_ts_info(struct qede_dev *edev, struct ethtool_ts_info *info)
 {
 	struct qede_ptp *ptp = edev->ptp;
 
-	if (!ptp)
-		return -EIO;
+	if (!ptp) {
+		info->so_timestamping = SOF_TIMESTAMPING_TX_SOFTWARE |
+					SOF_TIMESTAMPING_RX_SOFTWARE |
+					SOF_TIMESTAMPING_SOFTWARE;
+		info->phc_index = -1;
+
+		return 0;
+	}
 
 	info->so_timestamping = SOF_TIMESTAMPING_TX_SOFTWARE |
 				SOF_TIMESTAMPING_RX_SOFTWARE |
@@ -417,14 +391,18 @@ int qede_ptp_get_ts_info(struct qede_dev *edev, struct ethtool_ts_info *info)
 	return 0;
 }
 
-/* Called during unload, to stop PTP-related stuff */
-void qede_ptp_stop(struct qede_dev *edev)
+void qede_ptp_disable(struct qede_dev *edev)
 {
 	struct qede_ptp *ptp;
 
 	ptp = edev->ptp;
 	if (!ptp)
 		return;
+
+	if (ptp->clock) {
+		ptp_clock_unregister(ptp->clock);
+		ptp->clock = NULL;
+	}
 
 	/* Cancel PTP work queue. Should be done after the Tx queues are
 	 * drained to prevent additional scheduling.
@@ -439,11 +417,54 @@ void qede_ptp_stop(struct qede_dev *edev)
 	spin_lock_bh(&ptp->lock);
 	ptp->ops->disable(edev->cdev);
 	spin_unlock_bh(&ptp->lock);
+
+	kfree(ptp);
+	edev->ptp = NULL;
 }
 
-int qede_ptp_register_phc(struct qede_dev *edev)
+static int qede_ptp_init(struct qede_dev *edev, bool init_tc)
 {
 	struct qede_ptp *ptp;
+	int rc;
+
+	ptp = edev->ptp;
+	if (!ptp)
+		return -EINVAL;
+
+	spin_lock_init(&ptp->lock);
+
+	/* Configure PTP in HW */
+	rc = ptp->ops->enable(edev->cdev);
+	if (rc) {
+		DP_INFO(edev, "PTP HW enable failed\n");
+		return rc;
+	}
+
+	/* Init work queue for Tx timestamping */
+	INIT_WORK(&ptp->work, qede_ptp_task);
+
+	/* Init cyclecounter and timecounter. This is done only in the first
+	 * load. If done in every load, PTP application will fail when doing
+	 * unload / load (e.g. MTU change) while it is running.
+	 */
+	if (init_tc) {
+		memset(&ptp->cc, 0, sizeof(ptp->cc));
+		ptp->cc.read = qede_ptp_read_cc;
+		ptp->cc.mask = CYCLECOUNTER_MASK(64);
+		ptp->cc.shift = 0;
+		ptp->cc.mult = 1;
+
+		timecounter_init(&ptp->tc, &ptp->cc,
+				 ktime_to_ns(ktime_get_real()));
+	}
+
+	return rc;
+}
+
+int qede_ptp_enable(struct qede_dev *edev, bool init_tc)
+{
+	struct qede_ptp *ptp;
+	int rc;
 
 	ptp = kzalloc(sizeof(*ptp), GFP_KERNEL);
 	if (!ptp) {
@@ -454,13 +475,18 @@ int qede_ptp_register_phc(struct qede_dev *edev)
 	ptp->edev = edev;
 	ptp->ops = edev->ops->ptp;
 	if (!ptp->ops) {
-		kfree(ptp);
-		edev->ptp = NULL;
-		DP_ERR(edev, "PTP clock registeration failed\n");
-		return -EIO;
+		DP_INFO(edev, "PTP enable failed\n");
+		rc = -EIO;
+		goto err1;
 	}
 
 	edev->ptp = ptp;
+
+	rc = qede_ptp_init(edev, init_tc);
+	if (rc)
+		goto err1;
+
+	qede_ptp_cfg_filters(edev);
 
 	/* Fill the ptp_clock_info struct and register PTP clock */
 	ptp->clock_info.owner = THIS_MODULE;
@@ -478,13 +504,20 @@ int qede_ptp_register_phc(struct qede_dev *edev)
 
 	ptp->clock = ptp_clock_register(&ptp->clock_info, &edev->pdev->dev);
 	if (IS_ERR(ptp->clock)) {
-		ptp->clock = NULL;
-		kfree(ptp);
-		edev->ptp = NULL;
-		DP_ERR(edev, "PTP clock registeration failed\n");
+		DP_ERR(edev, "PTP clock registration failed\n");
+		qede_ptp_disable(edev);
+		rc = -EINVAL;
+		goto err2;
 	}
 
 	return 0;
+
+err1:
+	kfree(ptp);
+err2:
+	edev->ptp = NULL;
+
+	return rc;
 }
 
 void qede_ptp_tx_ts(struct qede_dev *edev, struct sk_buff *skb)
@@ -495,16 +528,28 @@ void qede_ptp_tx_ts(struct qede_dev *edev, struct sk_buff *skb)
 	if (!ptp)
 		return;
 
-	if (unlikely(!(edev->flags & QEDE_TX_TIMESTAMPING_EN))) {
-		DP_NOTICE(edev,
-			  "Tx timestamping was not enabled, this packet will not be timestamped\n");
+	if (test_and_set_bit_lock(QEDE_FLAGS_PTP_TX_IN_PRORGESS,
+				  &edev->flags)) {
+		DP_ERR(edev, "Timestamping in progress\n");
+		edev->ptp_skip_txts++;
+		return;
+	}
+
+	if (unlikely(!test_bit(QEDE_FLAGS_TX_TIMESTAMPING_EN, &edev->flags))) {
+		DP_ERR(edev,
+		       "Tx timestamping was not enabled, this packet will not be timestamped\n");
+		clear_bit_unlock(QEDE_FLAGS_PTP_TX_IN_PRORGESS, &edev->flags);
+		edev->ptp_skip_txts++;
 	} else if (unlikely(ptp->tx_skb)) {
-		DP_NOTICE(edev,
-			  "The device supports only a single outstanding packet to timestamp, this packet will not be timestamped\n");
+		DP_ERR(edev,
+		       "The device supports only a single outstanding packet to timestamp, this packet will not be timestamped\n");
+		clear_bit_unlock(QEDE_FLAGS_PTP_TX_IN_PRORGESS, &edev->flags);
+		edev->ptp_skip_txts++;
 	} else {
 		skb_shinfo(skb)->tx_flags |= SKBTX_IN_PROGRESS;
 		/* schedule check for Tx timestamp */
 		ptp->tx_skb = skb_get(skb);
+		ptp->ptp_tx_start = jiffies;
 		schedule_work(&ptp->work);
 	}
 }

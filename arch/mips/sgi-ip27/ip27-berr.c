@@ -12,7 +12,9 @@
 #include <linux/signal.h>	/* for SIGBUS */
 #include <linux/sched.h>	/* schow_regs(), force_sig() */
 #include <linux/sched/debug.h>
+#include <linux/sched/signal.h>
 
+#include <asm/ptrace.h>
 #include <asm/sn/addrs.h>
 #include <asm/sn/arch.h>
 #include <asm/sn/sn0/hub.h>
@@ -72,7 +74,7 @@ int ip27_be_handler(struct pt_regs *regs, int is_fixup)
 	show_regs(regs);
 	dump_tlb_all();
 	while(1);
-	force_sig(SIGBUS, current);
+	force_sig(SIGBUS);
 }
 
 void __init ip27_be_init(void)

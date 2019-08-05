@@ -77,17 +77,32 @@
 	};
 };
 
+&ehci0 {
+	status = "okay";
+};
+
 &mmc0 {
-	pinctrl-0 = <&mmc0_pins_a>;
-	pinctrl-names = "default";
 	broken-cd;
 	bus-width = <4>;
 	vmmc-supply = <&reg_vcc3v3>;
 	status = "okay";
 };
 
+&i2c0 {
+	status = "okay";
+
+	ns2009: ns2009@48 {
+		compatible = "nsiway,ns2009";
+		reg = <0x48>;
+	};
+};
+
+&ohci0 {
+	status = "okay";
+};
+
 &uart0 {
-	pinctrl-0 = <&uart0_pins_a>;
+	pinctrl-0 = <&uart0_pb_pins>;
 	pinctrl-names = "default";
 	status = "okay";
 };
@@ -98,6 +113,6 @@
 };
 
 &usbphy {
-	usb0_id_det-gpio = <&pio 5 6 GPIO_ACTIVE_HIGH>;
+	usb0_id_det-gpios = <&pio 5 6 GPIO_ACTIVE_HIGH>;
 	status = "okay";
 };
