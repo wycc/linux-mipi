@@ -174,7 +174,6 @@
 			};
 		};
 
-
 		mmc0: mmc@1c0f000 {
 			compatible = "allwinner,sun7i-a20-mmc";
 			reg = <0x01c0f000 0x1000>;
@@ -323,6 +322,19 @@
 			spi0_pins: spi0-pins {
 				pins = "PC0", "PC1", "PC2", "PC3";
 				function = "spi0";
+			};
+
+			pwm0_pins: pwm0 {
+				pins = "PB4";
+				function = "pwm0";
+			};
+
+			lcd_rgb666_pins_a: lcd-rgb666-pe {
+				pins = "PD0", "PD1", "PD2", "PD3", "PD4", "PD5",
+				       "PD6", "PD7", "PD8", "PD9", "PD10", "PD11",
+				       "PD12", "PD13", "PD14", "PD15", "PD16", "PD17",
+				       "PD18", "PD19", "PD20", "PD21";
+				function = "lcd";
 			};
 		};
 
