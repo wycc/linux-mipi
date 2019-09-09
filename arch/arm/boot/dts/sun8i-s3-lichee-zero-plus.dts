@@ -55,6 +55,16 @@
 	};
 };
 
+&codec {
+	allwinner,audio-routing =
+		// "Headphone", "HP",
+		// "Headphone", "HPCOM",
+		"Line Out", "LINEOUT",
+		"MIC1", "Mic",
+		"Mic",  "HBIAS";
+	status = "okay";
+};
+
 &de {
 	status = "okay";
 };
