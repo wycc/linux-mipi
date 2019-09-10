@@ -22,6 +22,27 @@
 		stdout-path = "serial0:115200n8";
 	};
 
+	leds {
+		compatible = "gpio-leds";
+		status = "disabled";
+
+		blue_led {
+			label = "licheepi:blue:usr";
+			gpios = <&pio 4 4 GPIO_ACTIVE_LOW>; /* PE4 */
+		};
+
+		green_led {
+			label = "licheepi:green:usr";
+			gpios = <&pio 4 7 GPIO_ACTIVE_LOW>; /* PE7 */
+			default-state = "on";
+		};
+
+		red_led {
+			label = "licheepi:red:usr";
+			gpios = <&pio 4 8 GPIO_ACTIVE_LOW>; /* PE8 */
+		};
+	};
+
 	reg_vcc3v3: vcc3v3 {
 		compatible = "regulator-fixed";
 		regulator-name = "vcc3v3";
