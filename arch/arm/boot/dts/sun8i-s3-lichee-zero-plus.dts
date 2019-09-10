@@ -68,6 +68,10 @@
 	status = "okay";
 };
 
+&ehci0 {
+	status = "okay";
+};
+
 &pwm {
 	pinctrl-names = "default";
 	pinctrl-0 = <&pwm0_pins>;
@@ -101,6 +105,10 @@
 	status = "okay";
 };
 
+&ohci0 {
+	status = "okay";
+};
+
 &uart0 {
 	pinctrl-0 = <&uart0_pb_pins>;
 	pinctrl-names = "default";
@@ -108,7 +116,7 @@
 };
 
 &usb_otg {
-	dr_mode = "peripheral";
+	dr_mode = "host";
 	status = "okay";
 };
 
