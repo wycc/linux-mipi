@@ -7,6 +7,7 @@
 #include "sun8i-v3.dtsi"
 
 #include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/input/input.h>
 
 / {
 	model = "Sipeed Lichee Zero Plus";
@@ -91,6 +92,32 @@
 
 &ehci0 {
 	status = "okay";
+};
+
+&lradc {
+	vref-supply = <&reg_vcc3v3>;
+	status = "okay";
+
+	button-430 {
+		label = "key0";
+		linux,code = <BTN_0>;
+		channel = <0>;
+		voltage = <430000>;
+	};
+
+	button-1060 {
+		label = "key1";
+		linux,code = <BTN_1>;
+		channel = <0>;
+		voltage = <1060000>;
+	};
+
+	button-1650 {
+		label = "key2";
+		linux,code = <BTN_2>;
+		channel = <0>;
+		voltage = <1650000>;
+	};
 };
 
 &pwm {
