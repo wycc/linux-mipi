@@ -107,6 +107,11 @@
         reset-gpios = <&pio 4 9 GPIO_ACTIVE_HIGH>; /* RST (PE9) */
         /* touchscreen-swapped-x-y */
     };
+
+	ns2009: ns2009@48 {
+		compatible = "nsiway,ns2009";
+		reg = <0x48>;
+	};
 };
 
 &lradc {
