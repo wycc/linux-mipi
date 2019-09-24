@@ -173,6 +173,13 @@
 	status = "okay";
 };
 
+&mmc1 {
+	broken-cd;
+	bus-width = <4>;
+	vmmc-supply = <&reg_vcc3v3>;
+	status = "okay";
+};
+
 &ohci0 {
 	status = "okay";
 };
