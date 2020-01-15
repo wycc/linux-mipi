@@ -61,7 +61,8 @@
 	panel: panel {
 		#address-cells = <1>;
 		#size-cells = <0>;
-		compatible = "urt,umsh-8596md-t", "simple-panel";
+		// compatible = "urt,umsh-8596md-t", "simple-panel";
+		compatible = "stx,st7701s-t", "simple-panel";
 
 		port@0 {
 			reg = <0>;
@@ -74,6 +75,39 @@
 				remote-endpoint = <&tcon0_out_lcd>;
 			};
 		};
+
+		// compatible = "panel-lvds";
+
+		// data-mapping = "jeida-18";
+		// width-mm = <54>;
+		// height-mm = <95>;
+
+		// panel-timing {
+		// 		clock-frequency = <33000000>;
+		// 		hactive = <360>;
+		// 		vactive = <640>;
+		// 		hfront-porch = <40>;
+		// 		hsync-len = <1>;
+		// 		hback-porch = <200>;
+		// 		vfront-porch = <12>;
+		// 		vsync-len = <1>;
+		// 		vback-porch = <30>;
+		// 		hsync-active = <0>;
+		// 		vsync-active = <0>;
+		// 		pixelclk-active = <0>;
+		// };
+
+		// port@0 {
+		// 	reg = <0>;
+		// 	backlight = <&backlight>;
+		// 	#address-cells = <1>;
+		// 	#size-cells = <0>;
+
+		// 	panel_input: endpoint@0 {
+		// 		reg = <0>;
+		// 		remote-endpoint = <&tcon0_out_lcd>;
+		// 	};
+		// };
 	};
 };
 
@@ -97,14 +131,13 @@
 &i2c0 {
 	status = "okay";
 
-	gt911: touchscreen@14 {
+	gt911: touchscreen@5d {
         compatible = "goodix,gt911";
-        reg = <0x14>;
+        reg = <0x5d>;
         interrupt-parent = <&pio>;
-        interrupts = <1 11 IRQ_TYPE_EDGE_FALLING>; /* (PB11) */
-        pinctrl-names = "default";
-        irq-gpios = <&pio 1 11 GPIO_ACTIVE_HIGH>; /* (PB11) */
-        reset-gpios = <&pio 4 9 GPIO_ACTIVE_HIGH>; /* RST (PE9) */
+        interrupts = <6 12 IRQ_TYPE_LEVEL_HIGH>; /* (PE18) */
+        irq-gpios = <&pio 6 12 GPIO_ACTIVE_HIGH>; /* (PE18) */
+        reset-gpios = <&pio 6 10 GPIO_ACTIVE_HIGH>; /* RST (PE17) */
         /* touchscreen-swapped-x-y */
     };
 

@@ -1335,6 +1335,33 @@ static const struct panel_desc giantplus_gpg482739qs5 = {
 	.bus_format = MEDIA_BUS_FMT_RGB888_1X24,
 };
 
+static const struct drm_display_mode sitronix_st7701s_mode = {
+	.clock = 33000,
+	.hdisplay = 360,
+	.hsync_start = 360 + 37,
+	.hsync_end = 360 + 37 + 1,
+	.htotal = 360 + 37 + 1 + 60,
+	.vdisplay = 640,
+	.vsync_start = 640 + 16,
+	.vsync_end = 640 + 16 + 96,
+	.vtotal = 640 + 16 + 96 + 48,
+	.vrefresh = 60,
+	// .flags = DRM_MODE_FLAG_NVSYNC | DRM_MODE_FLAG_NHSYNC,
+	// .flags = DISPLAY_FLAGS_HSYNC_HIGH | DISPLAY_FLAGS_VSYNC_HIGH |
+	// .flags = DISPLAY_FLAGS_HSYNC_LOW | DISPLAY_FLAGS_VSYNC_LOW,
+};
+
+static const struct panel_desc sitronix_st7701s = {
+	.modes = &sitronix_st7701s_mode,
+	.num_modes = 1,
+	.bpc = 6,
+	.size = {
+		.width = 54,
+		.height = 95,
+	},
+	.bus_format = MEDIA_BUS_FMT_RGB666_1X18,
+};
+
 static const struct display_timing hannstar_hsd070pww1_timing = {
 	.pixelclock = { 64300000, 71100000, 82000000 },
 	.hactive = { 1280, 1280, 1280 },
@@ -3038,6 +3065,9 @@ static const struct of_device_id platform_of_match[] = {
 	}, {
 		.compatible = "tpk,f10a-0102",
 		.data = &tpk_f10a_0102,
+	}, {
+		.compatible = "stx,st7701s-t",
+		.data = &sitronix_st7701s,
 	}, {
 		.compatible = "urt,umsh-8596md-t",
 		.data = &urt_umsh_8596md_parallel,
