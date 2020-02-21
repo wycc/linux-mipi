@@ -1360,6 +1360,7 @@ static const struct panel_desc sitronix_st7701s = {
 		.height = 95,
 	},
 	.bus_format = MEDIA_BUS_FMT_RGB666_1X18,
+	.bus_flags = DRM_BUS_FLAG_PIXDATA_DRIVE_POSEDGE,
 };
 
 static const struct display_timing hannstar_hsd070pww1_timing = {
