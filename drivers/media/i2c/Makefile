@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: GPL-2.0
 msp3400-objs	:=	msp3400-driver.o msp3400-kthreads.o
+obj-y += h62.o
 obj-$(CONFIG_VIDEO_MSP3400) += msp3400.o
 
 obj-$(CONFIG_VIDEO_SMIAPP)	+= smiapp/
